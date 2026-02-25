@@ -593,7 +593,8 @@ function OraclePanel() {
     default: `ORACLE v1.0 — MOMO CANDIE DAO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nConnected to Etherscan MCP layer.\nChain: Ethereum Mainnet (chainid=1)\nContract: 0xMOMO...CAND\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAsk me anything about the collection,\nholder distribution, or governance state.`,
     holder:  `HOLDER PULSE — LIVE CHAIN STATE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTotal unique holders: 2,847\nTokens tracked: 4,891 / 5,250\n\nTOP WALLETS\nrank  address         tokens  pct\n001   0x4f3B…c912   142     2.90%  ⚠ WHALE\n002   0xa7F1…3e44   98      2.00%  ⚠ WHALE\n003   0x9c2D…8b71   67      1.37%  ⚠ WHALE\n004   0x1a4E…ff22   43      0.88%\n005   0x6b7C…0d19   38      0.78%\n\nGovernance risk: 14 wallets control 28.4%\nRecommendation: √ dampening active in voting`,
     whale:   `WHALE DETECTION — CONCENTRATION SCAN\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nThreshold: > 1% of 5,250 supply (52+ tokens)\n\n14 whale wallets detected\nCombined holdings: 1,391 tokens\nCombined voting power (raw): 28.43%\nCombined voting power (√): 16.21%\n\n√ DAMPENING ACTIVE — quadratic model\nreduces combined whale influence by 43%.\nCouncil power remains distributed.\n\nLargest single holder: 142 tokens (2.90%)`,
-    gas:     `GAS ORACLE — ETHEREUM MAINNET\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSlow:     12 Gwei  (~3min)\nStandard: 18 Gwei  (~30sec)\nFast:     24 Gwei  (~10sec)\n\nFor DAO proposal submission (est. 180k gas):\nStandard cost: ~$4.12 at current ETH price\n\nOptimal window: weekdays 02:00-06:00 UTC\nCurrent time: peak hours — costs elevated`,
+    gas:      `GAS ORACLE — ETHEREUM MAINNET\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSlow:     12 Gwei  (~3min)\nStandard: 18 Gwei  (~30sec)\nFast:     24 Gwei  (~10sec)\n\nFor DAO proposal submission (est. 180k gas):\nStandard cost: ~$4.12 at current ETH price\n\nOptimal window: weekdays 02:00-06:00 UTC\nCurrent time: peak hours — costs elevated`,
+    snapshot: `SNAPSHOT STRATEGY — whitelist-weighted\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nStrategy: whitelist-weighted  (NOT "csv")\nNetwork:  Ethereum Mainnet (chainid=1)\nSymbol:   VOTE\n\nConfig shape:\n{\n  "name": "whitelist-weighted",\n  "network": "1",\n  "params": {\n    "symbol": "VOTE",\n    "addresses": {\n      "0x4f3B...c912": 847.32,\n      "0xa7F1...3e44": 612.10\n    }\n  }\n}\n\nKey facts:\n• addresses = object {addr: weight}, not array\n• Weights may be integers or decimals\n• Case-insensitive (checksummed via ethers.js)\n• No on-chain calls — config-driven, instant\n• Max ~8 strategies per space (additive VP)\n• Settings freeze at proposal creation time\n\nScale guide:\n  < few thousand  → whitelist-weighted (inline)\n  medium lists    → whitelist-weighted-json (URL)\n  10,000+         → api-v2 (dynamic endpoint)\n\nTest first: snapshot.org/#/playground/whitelist-weighted`,
   };
 
   async function handleQuery() {
@@ -603,9 +604,11 @@ function OraclePanel() {
 
     let response = ORACLE_RESPONSES.default;
     const q = query.toLowerCase();
-    if (q.includes("holder") || q.includes("distribution")) response = ORACLE_RESPONSES.holder;
-    else if (q.includes("whale") || q.includes("concentrat"))  response = ORACLE_RESPONSES.whale;
-    else if (q.includes("gas"))                                 response = ORACLE_RESPONSES.gas;
+    if (q.includes("holder") || q.includes("distribution"))      response = ORACLE_RESPONSES.holder;
+    else if (q.includes("whale") || q.includes("concentrat"))    response = ORACLE_RESPONSES.whale;
+    else if (q.includes("gas"))                                   response = ORACLE_RESPONSES.gas;
+    else if (q.includes("snapshot") || q.includes("strategy") || q.includes("whitelist") || q.includes("voting weight"))
+                                                                  response = ORACLE_RESPONSES.snapshot;
 
     await new Promise(r => setTimeout(r, 800));
 
@@ -639,7 +642,7 @@ function OraclePanel() {
           value={query}
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => e.key === "Enter" && handleQuery()}
-          placeholder="ask the chain... (try 'whale distribution' or 'gas prices')"
+          placeholder="ask the chain... (try 'snapshot strategy', 'whale detection', 'gas prices')"
           style={{ flex: 1 }}
         />
         <button className="btn-primary" onClick={handleQuery} disabled={loading}
@@ -663,7 +666,7 @@ function OraclePanel() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-        {["holder distribution", "whale detection", "gas prices"].map(q => (
+        {["snapshot strategy", "holder distribution", "whale detection", "gas prices"].map(q => (
           <button key={q} className="btn-ghost" onClick={() => setQuery(q)}>
             {q}
           </button>
@@ -881,7 +884,11 @@ export default function MomoCandieDAO() {
                   <span style={{ color: COLORS.pink }}>Mode:</span> Square Root (√) Dampening<br/>
                   <span style={{ color: COLORS.pink }}>Formula:</span> Voting Power = √(Σ trait rarity scores)<br/>
                   <span style={{ color: COLORS.pink }}>Effect:</span> 2× tokens ≠ 2× power — distributes authority<br/>
-                  <span style={{ color: COLORS.acid }}>Quorum:</span> 40% of supply required to pass proposals
+                  <span style={{ color: COLORS.acid }}>Quorum:</span> 40% of supply required to pass proposals<br/>
+                  <span style={{ color: COLORS.cyan }}>Snapshot:</span> strategy{" "}
+                  <span style={{ color: COLORS.acid }}>whitelist-weighted</span>
+                  {" "}— address→weight pairs, no on-chain calls<br/>
+                  <span style={{ color: COLORS.cyan }}>Scale:</span> inline JSON → hosted JSON → api-v2 (10k+)
                 </div>
               </div>
             </div>
