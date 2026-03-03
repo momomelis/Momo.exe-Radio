@@ -22,6 +22,33 @@ const COLORS = {
   ghost:    "#2a2a3e",
 };
 
+// ── Council treasury addresses to track ────────────────────────
+const COUNCIL_ADDRESSES = [
+  "0xddbd2b932c763ba5b1b7ae3b362eac3e8d40121a",
+  "0x63a9975ba31b0b9626b34300f7f627147df1f526",
+  "0x198ef1ec325a96cc354c7266a038be8b5c558f67",
+];
+
+async function getBalances() {
+  const apiKey = import.meta.env.VITE_ETHERSCAN_API_KEY;
+  const url =
+    `https://api.etherscan.io/api?module=account&action=balancemulti` +
+    `&address=${COUNCIL_ADDRESSES.join(",")}` +
+    `&tag=latest&apikey=${apiKey}`;
+
+  const res  = await fetch(url);
+  const data = await res.json();
+
+  if (data.status !== "1") {
+    throw new Error(data.message || "Etherscan error");
+  }
+
+  return data.result.map(item => ({
+    address: item.account,
+    eth: Number(item.balance) / 1e18,
+  }));
+}
+
 // ── Mock Data (replace with live API calls) ─────────────────────
 const MOCK_WALLET = "0x4f3B…c912";
 const MOCK_POWER  = 847.32;
@@ -701,6 +728,118 @@ function StatsBar() {
   );
 }
 
+function CouncilBalances() {
+  const [balances, setBalances] = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
+  const [lastFetch, setLastFetch] = useState(null);
+
+  async function fetchBalances() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getBalances();
+      setBalances(data);
+      setLastFetch(new Date());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { fetchBalances(); }, []);
+
+  const total = balances ? balances.reduce((s, b) => s + b.eth, 0) : 0;
+
+  return (
+    <div className="panel" style={{ padding: "20px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div className="orb" style={{ fontSize: "10px", letterSpacing: "4px", color: COLORS.acid,
+          textShadow: `0 0 10px ${COLORS.acid}` }}>
+          COUNCIL TREASURY
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {lastFetch && (
+            <span className="mono" style={{ fontSize: "9px", color: COLORS.muted }}>
+              {lastFetch.toLocaleTimeString()}
+            </span>
+          )}
+          <button className="btn-ghost" onClick={fetchBalances} disabled={loading}
+            style={{ fontSize: "9px", opacity: loading ? 0.6 : 1 }}>
+            {loading ? "FETCHING..." : "REFRESH"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mono" style={{ fontSize: "11px", color: COLORS.pink, marginBottom: 16,
+          padding: "10px 14px", background: "rgba(255,0,119,0.06)", border: `1px solid ${COLORS.pinkDim}` }}>
+          ERROR: {error}
+        </div>
+      )}
+
+      {!import.meta.env.VITE_ETHERSCAN_API_KEY && (
+        <div className="mono" style={{ fontSize: "10px", color: COLORS.muted, marginBottom: 16,
+          padding: "10px 14px", background: COLORS.deep, border: `1px solid ${COLORS.ghost}` }}>
+          ◆ Add VITE_ETHERSCAN_API_KEY to .env to enable live balance fetching
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+        {(balances || COUNCIL_ADDRESSES.map(a => ({ address: a, eth: null }))).map((b, i) => (
+          <div key={b.address} style={{
+            padding: "12px 16px",
+            background: COLORS.deep,
+            border: `1px solid ${COLORS.ghost}`,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, width: 20, flexShrink: 0 }}>
+                {String(i + 1).padStart(2, "0")}
+              </div>
+              <div className="mono" style={{ fontSize: "11px", color: COLORS.cyan, wordBreak: "break-all" }}>
+                {b.address.slice(0, 10)}…{b.address.slice(-8)}
+              </div>
+            </div>
+            <div className="orb" style={{
+              fontSize: "14px",
+              fontWeight: 700,
+              color: loading || b.eth === null ? COLORS.muted : COLORS.acid,
+              flexShrink: 0,
+            }}>
+              {loading || b.eth === null
+                ? "—"
+                : `${b.eth.toFixed(4)} ETH`}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {balances && (
+        <div style={{
+          borderTop: `1px solid ${COLORS.border}`,
+          paddingTop: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", textTransform: "uppercase" }}>
+            Combined Treasury
+          </div>
+          <div className="orb" style={{ fontSize: "20px", fontWeight: 900, color: COLORS.pink,
+            textShadow: "0 0 16px rgba(255,0,119,0.5)" }}>
+            {total.toFixed(4)} ETH
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────
 
 export default function MomoCandieDAO() {
@@ -718,6 +857,7 @@ export default function MomoCandieDAO() {
     { id: "wallet",    label: "My Seat"    },
     { id: "oracle",    label: "Oracle"     },
     { id: "stats",     label: "Collection" },
+    { id: "treasury",  label: "Treasury"   },
   ];
 
   return (
@@ -818,6 +958,8 @@ export default function MomoCandieDAO() {
           )}
 
           {activeTab === "oracle" && <OraclePanel />}
+
+          {activeTab === "treasury" && <CouncilBalances />}
 
           {activeTab === "stats" && (
             <div className="panel" style={{ padding: "24px" }}>
