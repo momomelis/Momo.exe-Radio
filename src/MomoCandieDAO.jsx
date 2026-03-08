@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import AiAgentOracle from "./AiAgentOracle.jsx";
 
 // ═══════════════════════════════════════════════════════════════════
 // MOMO CANDIE DAO — THE COUNCIL CHAMBER
@@ -858,6 +859,7 @@ export default function MomoCandieDAO() {
     { id: "oracle",    label: "Oracle"     },
     { id: "stats",     label: "Collection" },
     { id: "treasury",  label: "Treasury"   },
+    { id: "agents",    label: "AI Agents"  },
   ];
 
   return (
@@ -960,6 +962,8 @@ export default function MomoCandieDAO() {
           {activeTab === "oracle" && <OraclePanel />}
 
           {activeTab === "treasury" && <CouncilBalances />}
+
+          {activeTab === "agents" && <AiAgentOracle />}
 
           {activeTab === "stats" && (
             <div className="panel" style={{ padding: "24px" }}>
