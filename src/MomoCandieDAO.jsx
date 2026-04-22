@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════════════
 // MOMO CANDIE DAO — THE COUNCIL CHAMBER
@@ -709,7 +709,7 @@ function StatsBar() {
 export default function MomoCandieDAO() {
   const [connected, setConnected] = useState(false);
   const [activeTab, setActiveTab] = useState("proposals");
-  const [tick, setTick]           = useState(0);
+  const [_tick, setTick]           = useState(0);
 
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 30000);
