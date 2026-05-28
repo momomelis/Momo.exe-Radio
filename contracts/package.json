@@ -3,16 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "compile":      "hardhat compile",
-    "test":         "hardhat test",
-    "deploy":       "hardhat run scripts/deploy.js --network mainnet",
-    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
-    "verify":       "hardhat run scripts/verify.js --network mainnet",
-    "set-presale":  "hardhat run scripts/set-presale.js --network mainnet",
-    "set-public":   "hardhat run scripts/set-public.js --network mainnet",
-    "reserve-mint": "hardhat run scripts/reserve-mint.js --network mainnet",
-    "reveal":       "hardhat run scripts/reveal.js --network mainnet",
-    "dao-handoff":  "hardhat run scripts/dao-handoff.js --network mainnet"
+    "precompile":     "node scripts/precompile.js",
+    "compile":        "hardhat compile",
+    "test":           "hardhat test",
+    "deploy:local":   "UNREVEALED_URI=ipfs://placeholder/unrevealed.json hardhat run --no-compile scripts/deploy.js --network hardhat",
+    "deploy":         "hardhat run --no-compile scripts/deploy.js --network mainnet",
+    "deploy:sepolia": "hardhat run --no-compile scripts/deploy.js --network sepolia",
+    "verify":         "hardhat run --no-compile scripts/verify.js --network mainnet",
+    "set-presale":    "hardhat run --no-compile scripts/set-presale.js --network mainnet",
+    "set-public":     "hardhat run --no-compile scripts/set-public.js --network mainnet",
+    "reserve-mint":   "hardhat run --no-compile scripts/reserve-mint.js --network mainnet",
+    "reveal":         "hardhat run --no-compile scripts/reveal.js --network mainnet",
+    "dao-handoff":    "hardhat run --no-compile scripts/dao-handoff.js --network mainnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
