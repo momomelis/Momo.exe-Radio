@@ -13,10 +13,12 @@ const { MerkleTree } = require("merkletreejs");
 const keccak256 = require("keccak256");
 const fs = require("fs");
 
+// Leaves use double-hash (keccak256(keccak256(abi.encode(addr)))) matching OZ v5 MerkleProof standard.
 function buildTree(addresses) {
-  const leaves = addresses.map((addr) =>
-    ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address"], [addr]))
-  );
+  const leaves = addresses.map((addr) => {
+    const inner = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address"], [addr]));
+    return Buffer.from(ethers.keccak256(inner).slice(2), "hex");
+  });
   return new MerkleTree(leaves, keccak256, { sortPairs: true });
 }
 

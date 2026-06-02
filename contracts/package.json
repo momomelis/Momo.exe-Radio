@@ -6,6 +6,7 @@
     "precompile":     "node scripts/precompile.js",
     "compile":        "hardhat compile",
     "test":           "hardhat test",
+    "test:pipeline":  "hardhat run --no-compile scripts/test-pipeline.js --network hardhat",
     "deploy:local":   "UNREVEALED_URI=ipfs://placeholder/unrevealed.json hardhat run --no-compile scripts/deploy.js --network hardhat",
     "deploy":         "hardhat run --no-compile scripts/deploy.js --network mainnet",
     "deploy:sepolia": "hardhat run --no-compile scripts/deploy.js --network sepolia",
