@@ -23,10 +23,11 @@ const COLORS = {
 };
 
 // ── Mock Data (replace with live API calls) ─────────────────────
-const MOCK_WALLET = "0x4f3B…c912";
-const MOCK_POWER  = 847.32;
-const MOCK_TOKENS = 3;
-const MOCK_RANK   = 142;
+const MOCK_WALLET       = "0x4f3B…c912";
+const MOCK_POWER        = 847.32;
+const MOCK_TOKENS       = 3;
+const MOCK_RANK         = 142;
+const MOCK_USDC_BALANCE = 1250.00;
 
 const MOCK_PROPOSALS = [
   {
@@ -338,6 +339,61 @@ input:focus, textarea:focus { border-color: ${COLORS.pinkDim}; }
   border-color: ${COLORS.pinkDim};
   box-shadow: 0 0 30px rgba(255,0,119,0.08);
 }
+
+/* ── Withdraw Modal ─────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(5,5,8,0.92);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  width: 100%; max-width: 480px;
+  background: ${COLORS.panel};
+  border: 1px solid ${COLORS.pinkDim};
+  border-radius: 2px;
+  position: relative;
+  box-shadow: 0 0 60px rgba(255,0,119,0.15);
+  animation: slide-in 0.3s ease;
+}
+
+.modal::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, ${COLORS.pink}, ${COLORS.cyan}, transparent);
+}
+
+.step-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 1px solid ${COLORS.ghost};
+  background: ${COLORS.ghost};
+  transition: all 0.3s;
+}
+.step-dot.done   { background: ${COLORS.pinkDim}; border-color: ${COLORS.pinkDim}; }
+.step-dot.active { background: ${COLORS.pink}; border-color: ${COLORS.pink};
+  box-shadow: 0 0 8px rgba(255,0,119,0.8); }
+
+@keyframes confirm-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
+}
+.confirm-anim { animation: confirm-pulse 1.2s ease infinite; }
+
+.toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+  z-index: 20000;
+  padding: 12px 28px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; letter-spacing: 2px;
+  border-radius: 2px;
+  white-space: nowrap;
+  animation: slide-in 0.3s ease;
+}
+.toast-success { background: rgba(184,255,0,0.1); border: 1px solid ${COLORS.acid}; color: ${COLORS.acid}; }
+.toast-error   { background: rgba(255,0,119,0.1); border: 1px solid ${COLORS.pink}; color: ${COLORS.pink}; }
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -348,6 +404,309 @@ function timeRemaining(ms) {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return h > 24 ? `${Math.floor(h / 24)}D ${h % 24}H` : `${h}H ${m}M`;
+}
+
+// Solana base58 address — 32-44 chars, no 0/O/I/l
+function isValidSolanaAddress(addr) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr.trim());
+}
+
+function mockTxHash() {
+  return Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+}
+
+// ── WithdrawModal ─────────────────────────────────────────────────
+
+const ASYNC_STEPS = ["signing", "broadcasting", "confirming", "api_call"];
+
+function WithdrawModal({ balance, onClose, onSuccess }) {
+  const [step, setStep]       = useState("amount");
+  const [amount, setAmount]   = useState("");
+  const [address, setAddress] = useState("");
+  const [txHash, setTxHash]   = useState("");
+  const [error, setError]     = useState("");
+  const [dots, setDots]       = useState("");
+
+  const isAsync = ASYNC_STEPS.includes(step);
+
+  // Animate ellipsis during async steps
+  useEffect(() => {
+    if (!isAsync) return;
+    const id = setInterval(() => setDots(d => d.length >= 3 ? "" : d + "."), 420);
+    return () => clearInterval(id);
+  }, [isAsync]);
+
+  // Drive the async pipeline
+  useEffect(() => {
+    if (step === "signing")     { const t = setTimeout(() => setStep("broadcasting"), 1800); return () => clearTimeout(t); }
+    if (step === "broadcasting"){ const t = setTimeout(() => setStep("confirming"),   1200); return () => clearTimeout(t); }
+    if (step === "confirming")  {
+      const delay = 3000 + Math.random() * 5000;
+      const t = setTimeout(() => { setTxHash(mockTxHash()); setStep("api_call"); }, delay);
+      return () => clearTimeout(t);
+    }
+    if (step === "api_call") {
+      const t = setTimeout(() => { setStep("success"); onSuccess(parseFloat(amount), address); }, 1000);
+      return () => clearTimeout(t);
+    }
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function validateAmount() {
+    const n = parseFloat(amount);
+    if (!amount || isNaN(n)) return "Enter an amount";
+    if (n < 1)        return "Minimum withdrawal is 1 USDC";
+    if (n > balance)  return `Insufficient balance (max ${balance.toFixed(2)} USDC)`;
+    return "";
+  }
+
+  function nextFromAmount() {
+    const err = validateAmount();
+    if (err) { setError(err); return; }
+    setError(""); setStep("address");
+  }
+
+  function nextFromAddress() {
+    if (!isValidSolanaAddress(address)) { setError("Invalid Solana address"); return; }
+    setError(""); setStep("review");
+  }
+
+  // Step indicator: 5 visible nodes
+  const IND = ["amount", "address", "review", "signing", "success"];
+  const indIdx = isAsync ? IND.indexOf("signing") : IND.indexOf(step);
+
+  const stepLabel = { amount: "STEP 1/5", address: "STEP 2/5", review: "STEP 3/5",
+    signing: "STEP 4/5", broadcasting: "STEP 4/5", confirming: "STEP 4/5",
+    api_call: "STEP 4/5", success: "COMPLETE" }[step];
+
+  return (
+    <div className="modal-overlay"
+      onClick={e => { if (e.target === e.currentTarget && !isAsync && step !== "success") onClose(); }}>
+      <div className="modal">
+
+        {/* ── Modal header ── */}
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="orb" style={{ fontSize: "11px", letterSpacing: "4px", color: COLORS.cyan }}>
+              WITHDRAW USDC
+            </div>
+            {!isAsync && step !== "success" && (
+              <button onClick={onClose} style={{
+                background: "none", border: "none", color: COLORS.muted,
+                cursor: "pointer", fontSize: "20px", lineHeight: 1, padding: 0,
+              }}>×</button>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 16 }}>
+            {IND.map((s, i) => (
+              <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div className={`step-dot${i < indIdx ? " done" : i === indIdx ? " active" : ""}`} />
+                {i < IND.length - 1 && (
+                  <div style={{ width: 24, height: 1, background: i < indIdx ? COLORS.pinkDim : COLORS.ghost }} />
+                )}
+              </div>
+            ))}
+            <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", marginLeft: 8 }}>
+              {stepLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Modal body ── */}
+        <div style={{ padding: "24px" }}>
+
+          {/* Step 1 — amount */}
+          {step === "amount" && (
+            <div className="slide-in">
+              <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", marginBottom: 20, textTransform: "uppercase" }}>
+                Enter withdrawal amount
+              </div>
+              <div style={{ position: "relative", marginBottom: 8 }}>
+                <input type="number" value={amount} autoFocus min="1" step="0.01"
+                  onChange={e => { setAmount(e.target.value); setError(""); }}
+                  onKeyDown={e => e.key === "Enter" && nextFromAmount()}
+                  placeholder="0.00"
+                  style={{ paddingRight: 60, fontSize: "18px" }}
+                />
+                <span className="mono" style={{
+                  position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)",
+                  fontSize: "11px", color: COLORS.cyan, pointerEvents: "none",
+                }}>USDC</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+                <span className="mono" style={{ fontSize: "10px", color: COLORS.muted }}>
+                  Available: {balance.toFixed(2)} USDC
+                </span>
+                <button className="mono" onClick={() => { setAmount(balance.toFixed(2)); setError(""); }}
+                  style={{ background: "none", border: "none", color: COLORS.cyan, cursor: "pointer", fontSize: "10px" }}>
+                  MAX
+                </button>
+              </div>
+              {error && <div className="mono" style={{ fontSize: "10px", color: COLORS.pink, marginBottom: 12 }}>{error}</div>}
+              <button className="btn-primary" onClick={nextFromAmount} style={{ width: "100%" }}>
+                Continue →
+              </button>
+            </div>
+          )}
+
+          {/* Step 2 — address */}
+          {step === "address" && (
+            <div className="slide-in">
+              <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", marginBottom: 20, textTransform: "uppercase" }}>
+                Destination Solana address
+              </div>
+              <input value={address} autoFocus
+                onChange={e => { setAddress(e.target.value); setError(""); }}
+                onKeyDown={e => e.key === "Enter" && nextFromAddress()}
+                placeholder="e.g. 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+                style={{ marginBottom: 6 }}
+              />
+              <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, marginBottom: 20 }}>
+                Base58 · 32–44 chars · Solana mainnet only
+              </div>
+              {error && <div className="mono" style={{ fontSize: "10px", color: COLORS.pink, marginBottom: 12 }}>{error}</div>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn-ghost" onClick={() => { setStep("amount"); setError(""); }}>← Back</button>
+                <button className="btn-primary" onClick={nextFromAddress} style={{ flex: 1 }}>Continue →</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3 — review */}
+          {step === "review" && (
+            <div className="slide-in">
+              <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", marginBottom: 20, textTransform: "uppercase" }}>
+                Review & confirm
+              </div>
+              {[
+                { label: "Amount",      val: `${parseFloat(amount).toFixed(2)} USDC`,
+                  color: COLORS.acid,   extra: { fontSize: "20px", fontFamily: "Orbitron", fontWeight: 700 } },
+                { label: "Network",     val: "Solana Mainnet",                         color: COLORS.cyan  },
+                { label: "To",          val: `${address.slice(0,8)}…${address.slice(-6)}`, color: COLORS.cream },
+                { label: "From",        val: MOCK_WALLET,                              color: COLORS.cream },
+                { label: "Est. fee",    val: "< $0.001",                               color: COLORS.muted },
+              ].map((r, i, arr) => (
+                <div key={i} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "10px 0", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.ghost}` : "none",
+                }}>
+                  <span className="mono" style={{ fontSize: "10px", color: COLORS.muted, letterSpacing: "1px" }}>{r.label}</span>
+                  <span className="mono" style={{ fontSize: "12px", color: r.color, ...(r.extra || {}) }}>{r.val}</span>
+                </div>
+              ))}
+              <div className="mono" style={{
+                fontSize: "9px", color: COLORS.muted, marginTop: 16, marginBottom: 20,
+                padding: "10px 12px", background: COLORS.deep, border: `1px solid ${COLORS.ghost}`,
+              }}>
+                ◆ You will be prompted to sign in Phantom. This cannot be undone.
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn-ghost" onClick={() => setStep("address")}>← Back</button>
+                <button className="btn-primary" onClick={() => setStep("signing")} style={{ flex: 1 }}>
+                  Sign with Phantom →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Steps 4–7 — async pipeline */}
+          {isAsync && (
+            <div className="slide-in" style={{ textAlign: "center", padding: "12px 0 4px" }}>
+              <div style={{ marginBottom: 24 }}>
+                {step === "signing" && <>
+                  <div style={{ fontSize: "40px", marginBottom: 12 }}>👻</div>
+                  <div className="orb" style={{ fontSize: "13px", color: COLORS.cream, marginBottom: 6 }}>Waiting for Phantom</div>
+                  <div className="mono" style={{ fontSize: "11px", color: COLORS.muted }}>
+                    Approve the transaction in your wallet<span className="confirm-anim">{dots}</span>
+                  </div>
+                </>}
+                {step === "broadcasting" && <>
+                  <div style={{ fontSize: "40px", marginBottom: 12 }}>📡</div>
+                  <div className="orb" style={{ fontSize: "13px", color: COLORS.cream, marginBottom: 6 }}>Broadcasting</div>
+                  <div className="mono" style={{ fontSize: "11px", color: COLORS.muted }}>
+                    Sending to Solana network<span className="confirm-anim">{dots}</span>
+                  </div>
+                </>}
+                {step === "confirming" && <>
+                  <div style={{ fontSize: "40px", marginBottom: 12 }}>⛓</div>
+                  <div className="orb" style={{ fontSize: "13px", color: COLORS.cyan, marginBottom: 6 }}>Confirming on-chain</div>
+                  <div className="mono" style={{ fontSize: "11px", color: COLORS.muted }}>
+                    Waiting for finality (5–30s)<span className="confirm-anim">{dots}</span>
+                  </div>
+                </>}
+                {step === "api_call" && <>
+                  <div style={{ fontSize: "40px", marginBottom: 12 }}>🔄</div>
+                  <div className="orb" style={{ fontSize: "13px", color: COLORS.cream, marginBottom: 6 }}>Verifying with server</div>
+                  <div className="mono" style={{ fontSize: "11px", color: COLORS.muted }}>
+                    Updating balance & tax records<span className="confirm-anim">{dots}</span>
+                  </div>
+                </>}
+              </div>
+
+              {/* Pipeline progress trail */}
+              <div style={{ display: "flex", justifyContent: "center", gap: 20 }}>
+                {[
+                  { id: "signing",      label: "SIGNED"    },
+                  { id: "broadcasting", label: "SENT"      },
+                  { id: "confirming",   label: "CONFIRMED" },
+                  { id: "api_call",     label: "RECORDED"  },
+                ].map(s => {
+                  const cur = ASYNC_STEPS.indexOf(step);
+                  const pos = ASYNC_STEPS.indexOf(s.id);
+                  const done   = pos < cur;
+                  const active = pos === cur;
+                  return (
+                    <div key={s.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                      <div style={{
+                        width: 7, height: 7, borderRadius: "50%",
+                        background: done ? COLORS.acid : active ? COLORS.pink : COLORS.ghost,
+                        boxShadow: active ? `0 0 10px ${COLORS.pink}` : "none",
+                        transition: "all 0.4s",
+                      }} />
+                      <div className="mono" style={{
+                        fontSize: "8px", letterSpacing: "1px",
+                        color: done ? COLORS.acid : active ? COLORS.pink : COLORS.muted,
+                      }}>{s.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Step 8 — success */}
+          {step === "success" && (
+            <div className="slide-in" style={{ textAlign: "center", padding: "8px 0" }}>
+              <div style={{
+                fontSize: "42px", color: COLORS.acid,
+                textShadow: `0 0 30px ${COLORS.acid}`, marginBottom: 12,
+              }}>✦</div>
+              <div className="orb" style={{
+                fontSize: "15px", fontWeight: 900, color: COLORS.acid,
+                textShadow: `0 0 20px ${COLORS.acid}`, marginBottom: 8,
+              }}>WITHDRAWAL COMPLETE</div>
+              <div className="mono" style={{ fontSize: "12px", color: COLORS.cream, marginBottom: 20 }}>
+                {parseFloat(amount).toFixed(2)} USDC sent to Solana
+              </div>
+              <div style={{
+                padding: "10px 14px", background: COLORS.deep,
+                border: `1px solid ${COLORS.ghost}`, marginBottom: 20, textAlign: "left",
+              }}>
+                <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", marginBottom: 4 }}>
+                  TX HASH
+                </div>
+                <div className="mono" style={{ fontSize: "9px", color: COLORS.cyan, wordBreak: "break-all" }}>
+                  {txHash}
+                </div>
+              </div>
+              <button className="btn-primary" onClick={onClose} style={{ width: "100%" }}>
+                Close ✓
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Components ────────────────────────────────────────────────────
@@ -413,7 +772,7 @@ function PowerRing({ power, tokens }) {
   );
 }
 
-function WalletPanel({ connected, onConnect }) {
+function WalletPanel({ connected, onConnect, usdcBalance, onWithdraw, withdrawHistory }) {
   if (!connected) return (
     <div className="panel corner-tl corner-br" style={{ padding: "32px", textAlign: "center" }}>
       <div className="mono" style={{ fontSize: "10px", letterSpacing: "3px", color: COLORS.muted, marginBottom: 24, textTransform: "uppercase" }}>
@@ -440,21 +799,34 @@ function WalletPanel({ connected, onConnect }) {
               {MOCK_WALLET}
             </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14 }}>
             <div className="stat-block">
               <div className="stat-label">Voting Power</div>
-              <div className="stat-value" style={{ color: COLORS.pink, fontSize: 20 }}>{MOCK_POWER.toFixed(1)}</div>
+              <div className="stat-value" style={{ color: COLORS.pink, fontSize: 18 }}>{MOCK_POWER.toFixed(1)}</div>
             </div>
             <div className="stat-block">
               <div className="stat-label">Council Rank</div>
-              <div className="stat-value" style={{ color: COLORS.acid }}># {MOCK_RANK}</div>
+              <div className="stat-value" style={{ color: COLORS.acid, fontSize: 18 }}># {MOCK_RANK}</div>
             </div>
             <div className="stat-block">
               <div className="stat-label">Tokens Held</div>
-              <div className="stat-value" style={{ color: COLORS.cyan }}>{MOCK_TOKENS}</div>
+              <div className="stat-value" style={{ color: COLORS.cyan, fontSize: 18 }}>{MOCK_TOKENS}</div>
+            </div>
+            <div className="stat-block">
+              <div className="stat-label">USDC Balance</div>
+              <div className="stat-value" style={{ color: COLORS.cream, fontSize: 18 }}>{usdcBalance.toFixed(2)}</div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Withdraw button */}
+      <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+        <button className="btn-primary" onClick={onWithdraw}
+          style={{ fontSize: "10px", padding: "8px 18px" }}
+          disabled={usdcBalance < 1}>
+          ◆ Withdraw USDC
+        </button>
       </div>
 
       <div style={{ marginTop: 20, borderTop: `1px solid ${COLORS.border}`, paddingTop: 16 }}>
@@ -486,6 +858,35 @@ function WalletPanel({ connected, onConnect }) {
           ))}
         </div>
       </div>
+
+      {/* Withdrawal history */}
+      {withdrawHistory.length > 0 && (
+        <div style={{ marginTop: 20, borderTop: `1px solid ${COLORS.border}`, paddingTop: 16 }}>
+          <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, letterSpacing: "2px", marginBottom: 10, textTransform: "uppercase" }}>
+            Withdrawal History
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {withdrawHistory.map((tx, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 10px", background: COLORS.deep, border: `1px solid ${COLORS.ghost}`,
+              }}>
+                <div>
+                  <div className="mono" style={{ fontSize: "11px", color: COLORS.cream }}>
+                    {tx.amount.toFixed(2)} USDC
+                  </div>
+                  <div className="mono" style={{ fontSize: "9px", color: COLORS.muted, marginTop: 2 }}>
+                    {tx.address.slice(0, 8)}…{tx.address.slice(-6)} · {tx.time}
+                  </div>
+                </div>
+                <div>
+                  <span className="tag tag-active">✓ SENT</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -707,14 +1108,31 @@ function StatsBar() {
 // ── Main App ──────────────────────────────────────────────────────
 
 export default function MomoCandieDAO() {
-  const [connected, setConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState("proposals");
-  const [_tick, setTick]           = useState(0);
+  const [connected,       setConnected]       = useState(false);
+  const [activeTab,       setActiveTab]       = useState("proposals");
+  const [usdcBalance,     setUsdcBalance]     = useState(MOCK_USDC_BALANCE);
+  const [showWithdraw,    setShowWithdraw]    = useState(false);
+  const [withdrawHistory, setWithdrawHistory] = useState([]);
+  const [toast,           setToast]           = useState(null);
+  const [_tick,           setTick]            = useState(0);
 
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 30000);
     return () => clearInterval(id);
   }, []);
+
+  function handleWithdrawSuccess(amount, address) {
+    setUsdcBalance(b => +(b - amount).toFixed(2));
+    setWithdrawHistory(h => [{
+      amount, address,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    }, ...h]);
+  }
+
+  function showToast(message, type = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  }
 
   const tabs = [
     { id: "proposals", label: "Proposals"  },
@@ -745,7 +1163,9 @@ export default function MomoCandieDAO() {
         {/* Connect CTA (if not connected) */}
         {!connected && (
           <div style={{ marginBottom: 20 }}>
-            <WalletPanel connected={false} onConnect={() => setConnected(true)} />
+            <WalletPanel connected={false} onConnect={() => setConnected(true)}
+              usdcBalance={usdcBalance} onWithdraw={() => setShowWithdraw(true)}
+              withdrawHistory={withdrawHistory} />
           </div>
         )}
 
@@ -807,7 +1227,9 @@ export default function MomoCandieDAO() {
           {activeTab === "wallet" && (
             <div>
               {connected
-                ? <WalletPanel connected={true} onConnect={() => {}} />
+                ? <WalletPanel connected={true} onConnect={() => {}}
+                    usdcBalance={usdcBalance} onWithdraw={() => setShowWithdraw(true)}
+                    withdrawHistory={withdrawHistory} />
                 : (
                   <div style={{ textAlign: "center", padding: "48px 0" }}>
                     <div className="mono" style={{ color: COLORS.muted, fontSize: "12px", marginBottom: 20 }}>
@@ -903,6 +1325,25 @@ export default function MomoCandieDAO() {
           </div>
         </div>
       </div>
+
+      {/* Withdraw modal */}
+      {showWithdraw && connected && (
+        <WithdrawModal
+          balance={usdcBalance}
+          onClose={() => setShowWithdraw(false)}
+          onSuccess={(amount, address) => {
+            handleWithdrawSuccess(amount, address);
+            showToast(`✦ ${amount.toFixed(2)} USDC sent to Solana`);
+          }}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          {toast.message}
+        </div>
+      )}
     </>
   );
 }
